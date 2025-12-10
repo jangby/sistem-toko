@@ -160,47 +160,63 @@
     </div>
 
     <div x-data="voiceApp()" class="fixed bottom-6 left-6 z-50">
+    
+    <button @click="startSession()" 
+            class="w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition transform hover:scale-110 border-4 border-white"
+            :class="isListening ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-emerald-500 to-teal-500'">
         
-        <button @click="startListening()" 
-                class="w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition transform hover:scale-110"
-                :class="isListening ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-blue-600 to-cyan-500'">
-            
-            <svg x-show="!isListening" class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-            
-            <svg x-show="isListening" class="w-7 h-7 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-        </button>
+        <svg x-show="!isListening" class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+        
+        <svg x-show="isListening" class="w-8 h-8 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+    </button>
 
-        <div x-show="statusMessage" 
-             x-transition 
-             class="absolute bottom-16 left-0 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-lg w-64 border border-gray-100 dark:border-gray-700">
-            <p class="text-xs font-bold text-gray-400 uppercase mb-1">Status Suara</p>
-            <p class="text-sm font-semibold text-gray-800 dark:text-white" x-text="statusMessage"></p>
-        </div>
-
+    <div x-show="message" 
+         x-transition 
+         class="absolute bottom-20 left-0 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-xl w-72 border border-gray-200 dark:border-gray-700">
+        <p class="text-[10px] font-bold text-gray-400 uppercase mb-1">Asisten Toko</p>
+        <p class="text-sm font-bold text-gray-800 dark:text-white leading-relaxed" x-text="message"></p>
     </div>
 
+</div>
+
 <script>
-    function voiceBot() {
+    function voiceApp() {
         return {
-            listening: false,
+            isListening: false, // Perbaikan: Sesuaikan dengan HTML
             message: '',
             step: 0, // 0:Idle, 1:Cari Barang, 2:Tanya Qty, 3:Tanya Uang
             data: { id: null, name: '', price: 0, qty: 0, pay: 0 },
             recognition: null,
 
             init() {
+                // Cek support browser
                 if ('webkitSpeechRecognition' in window) {
                     this.recognition = new webkitSpeechRecognition();
                     this.recognition.continuous = false;
                     this.recognition.lang = 'id-ID';
+                    this.recognition.interimResults = false;
                     
-                    this.recognition.onstart = () => { this.listening = true; };
-                    this.recognition.onend = () => { this.listening = false; };
+                    this.recognition.onstart = () => { 
+                        this.isListening = true; 
+                        this.message = "Mendengarkan...";
+                    };
+                    
+                    this.recognition.onend = () => { 
+                        this.isListening = false; 
+                    };
                     
                     this.recognition.onresult = (event) => {
                         const text = event.results[0][0].transcript.toLowerCase();
                         this.processInput(text);
                     };
+
+                    this.recognition.onerror = (event) => {
+                        this.isListening = false;
+                        console.error("Speech Error:", event.error);
+                        this.say("Maaf, tidak terdengar. Coba lagi.");
+                    };
+                } else {
+                    alert("Browser tidak support. Gunakan Google Chrome.");
                 }
             },
 
@@ -214,7 +230,9 @@
                 }
                 
                 // Beri jeda agar komputer selesai bicara baru mendengarkan
-                setTimeout(() => { this.recognition.start(); }, 1500);
+                setTimeout(() => { 
+                    try { this.recognition.start(); } catch(e) {} 
+                }, 1500);
             },
 
             // Otak Percakapan
@@ -294,7 +312,8 @@
             // Fungsi Helper: Tanya Uang
             askPayment() {
                 let total = this.data.price * this.data.qty;
-                this.say("Total " + total + ". Uangnya berapa?");
+                let formatted = new Intl.NumberFormat('id-ID').format(total);
+                this.say("Total " + formatted + ". Uangnya berapa?");
                 setTimeout(() => this.recognition.start(), 2500);
             },
 
@@ -316,15 +335,13 @@
                     if (res.status === 'success') {
                         this.say(res.message);
                         
-                        // --- PERUBAHAN DISINI (KIRIM KE APP) ---
-                        // Panggil fungsi untuk kirim data ke Aplikasi Android
+                        // Kirim ke Native App (Android)
                         this.sendToNativeApp(res.trx_data);
-                        // ---------------------------------------
 
                         // Reset dan Refresh Dashboard
                         this.step = 0;
                         this.data = { id: null, name: '', price: 0, qty: 0, pay: 0 };
-                        setTimeout(() => window.location.reload(), 3000); // Delay dikit biar suara selesai
+                        setTimeout(() => window.location.reload(), 3000); 
                     } else {
                         this.say("Gagal. " + res.message);
                         this.step = 0;
@@ -334,97 +351,50 @@
 
             // --- FUNGSI JEMBATAN KE APLIKASI ANDROID/IOS ---
             sendToNativeApp(dataTransaksi) {
-                // Ubah object jadi String JSON agar bisa dibaca Java/Kotlin/Swift
                 const jsonString = JSON.stringify(dataTransaksi);
-
                 try {
-                    // Cek 1: Jika menggunakan Android JavascriptInterface
-                    // Asumsi nama interface di Android Anda adalah 'AndroidPOS'
-                    // dan nama fungsinya 'printStruk'
                     if (window.AndroidPOS && window.AndroidPOS.printStruk) {
                         window.AndroidPOS.printStruk(jsonString);
-                        console.log("Data dikirim ke Android Interface");
-                    } 
-                    
-                    // Cek 2: Jika menggunakan React Native WebView
-                    else if (window.ReactNativeWebView) {
-                        window.ReactNativeWebView.postMessage(jsonString);
-                        console.log("Data dikirim ke React Native");
+                    } else {
+                        console.log("Mode Web: Simulasi Cetak Struk (Cek Console)");
                     }
-
-                    // Cek 3: Jika menggunakan Flutter (JavascriptChannel)
-                    // Asumsi nama channelnya 'PrintChannel'
-                    else if (window.PrintChannel) {
-                        window.PrintChannel.postMessage(jsonString);
-                        console.log("Data dikirim ke Flutter");
-                    }
-
-                    else {
-                        console.log("Tidak terdeteksi di dalam aplikasi. Data Struk:", dataTransaksi);
-                        alert("Mode Web: Simulasi Cetak Struk (Cek Console)");
-                    }
-
                 } catch (e) {
                     console.error("Gagal mengirim ke aplikasi:", e);
                 }
-            }
+            },
 
             // Fungsi Bicara (TTS)
             say(text) {
                 this.message = text;
                 let u = new SpeechSynthesisUtterance(text);
                 u.lang = 'id-ID';
-                u.rate = 1.1; // Sedikit lebih cepat
+                u.rate = 1.1; 
                 window.speechSynthesis.speak(u);
             },
 
             // Parser Angka (Satu, Dua, 10, dll)
             parseNumber(text) {
-                // Mapping manual angka text ke integer
                 const map = { 'satu': 1, 'dua': 2, 'tiga': 3, 'empat': 4, 'lima': 5, 'enam': 6, 'tujuh': 7, 'delapan': 8, 'sembilan': 9, 'sepuluh': 10 };
-                
-                // Cek angka digit
                 let match = text.match(/\d+/);
                 if (match) return parseInt(match[0]);
-
-                // Cek angka kata
-                for (let k in map) {
-                    if (text.includes(k)) return map[k];
-                }
+                for (let k in map) { if (text.includes(k)) return map[k]; }
                 return 0;
             },
 
             // Parser Uang (Ribu, Juta, Ceban, Goceng)
             parseMoney(text) {
-                // Bersihkan text
                 let clean = text.replace(/\./g, '').replace(/rp/g, '').trim();
-                let num = this.parseNumber(clean);
-                
-                // Jika user bilang "Lima puluh ribu" -> parseNumber dapat 5 -> dikali 10000 jadi salah.
-                // Logic simpel: Ambil semua angka digit
-                let digitMatch = clean.match(/\d+/g);
-                if (digitMatch) {
-                    // Gabungkan angka (misal "50" dan "000")
-                    return parseInt(digitMatch.join('')); 
-                }
-                
-                // Logic Text to Money Sederhana
                 let multiplier = 1;
                 if (text.includes("ribu")) multiplier = 1000;
                 if (text.includes("juta")) multiplier = 1000000;
                 
-                // Ambil angka depan (misal "lima" puluh ribu)
-                let base = this.parseNumber(text); 
-                // Jika parseNumber gagal (misal "20" tidak terdeteksi sbg kata "dua puluh")
+                let base = this.parseNumber(clean); 
                 if(base === 0) {
-                     // Fallback regex angka di depan kata ribu
                      let preMatch = text.match(/(\d+)\s*ribu/);
                      if(preMatch) base = parseInt(preMatch[1]);
                 }
-
                 if (base > 0) return base * multiplier;
-
-                return 0; // Gagal parse
+                return 0; 
             }
         }
     }
