@@ -5,86 +5,88 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\TransactionDetail;
-use App\Services\WaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 
 class VoiceCommandController extends Controller
 {
-    public function process(Request $request)
+    // API untuk mencari produk berdasarkan suara (Search Helper)
+    public function searchProduct(Request $request)
     {
-        $text = strtolower($request->input('text')); // Contoh: "jual 5 kopi kapal api"
+        $keyword = $request->input('keyword');
+        // Hapus kata sambung umum
+        $clean = str_replace(['jual', 'cari', 'barang', 'tolong'], '', strtolower($keyword));
+        $clean = trim($clean);
 
-        // 1. DETEKSI JUMLAH (Cari angka dalam kalimat)
-        // Regex untuk mencari angka (misal: '5', '10', 'dua')
-        preg_match('/\d+/', $text, $matches);
-        $qty = $matches[0] ?? 1; // Default 1 jika tidak sebut angka
+        $product = Product::where('name', 'like', "%{$clean}%")->first();
 
-        // 2. DETEKSI NAMA BARANG
-        // Hapus kata perintah umum agar sisa nama barangnya saja
-        $keywordsToRemove = ['jual', 'beli', 'tolong', 'masukkan', 'input', 'lapor', 'barang', 'buah', 'pcs', 'bungkus', $qty];
-        $cleanName = str_replace($keywordsToRemove, '', $text);
-        $cleanName = trim($cleanName); // Sisa: "kopi kapal api"
-
-        // 3. CARI DI DATABASE
-        $product = Product::where('name', 'like', "%{$cleanName}%")->first();
-
-        if (!$product) {
+        if ($product) {
             return response()->json([
-                'status' => 'error',
-                'message' => "Maaf, barang bernama '{$cleanName}' tidak ditemukan."
+                'status' => 'found',
+                'data' => $product
             ]);
         }
 
-        // 4. PROSES TRANSAKSI
+        return response()->json(['status' => 'not_found']);
+    }
+
+    // API Finalisasi Transaksi
+    public function storeTransaction(Request $request)
+    {
+        $request->validate([
+            'product_id' => 'required',
+            'qty' => 'required|numeric',
+            'pay_amount' => 'required|numeric'
+        ]);
+
         try {
             DB::beginTransaction();
 
-            if ($product->stock < $qty) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => "Stok {$product->name} kurang. Sisa: {$product->stock}"
-                ]);
+            $product = Product::find($request->product_id);
+            $total = $product->sell_price * $request->qty;
+            
+            // Cek Stok
+            if ($product->stock < $request->qty) {
+                return response()->json(['status' => 'error', 'message' => 'Stok tidak cukup!']);
             }
 
             // Kurangi Stok
-            $product->decrement('stock', $qty);
+            $product->decrement('stock', $request->qty);
 
-            // Buat Transaksi Otomatis
-            $total = $product->sell_price * $qty;
+            // Simpan Transaksi
             $trx = Transaction::create([
-                'invoice_no' => 'VOICE-' . date('ymdHis'),
+                'invoice_no' => 'VC-' . date('ymdHis'),
                 'user_id' => Auth::id(),
                 'total_amount' => $total,
-                'pay_amount' => $total,
-                'change_amount' => 0,
+                'pay_amount' => $request->pay_amount,
+                'change_amount' => $request->pay_amount - $total,
                 'payment_method' => 'cash',
             ]);
 
             TransactionDetail::create([
                 'transaction_id' => $trx->id,
                 'product_id' => $product->id,
-                'qty' => $qty,
+                'qty' => $request->qty,
                 'price' => $product->sell_price,
             ]);
 
             DB::commit();
 
-            // Kirim WA (Optional)
-            // WaService::sendGroupMessage("🎤 Voice Sale: {$qty}x {$product->name}");
+    // AMBIL DATA LENGKAP UNTUK DIKIRIM KE APLIKASI
+    // Kita load relasi detail produk dan kasir
+    $fullTrx = Transaction::with(['details.product', 'cashier'])->find($trx->id);
 
-            return response()->json([
-                'status' => 'success',
-                'message' => "Siap! {$qty} {$product->name} berhasil terjual. Total Rp " . number_format($total)
-            ]);
+    return response()->json([
+        'status' => 'success',
+        'message' => "Transaksi sukses! Kembalian " . number_format($trx->change_amount),
+        // Kita kirim objek lengkap ini ke Frontend
+        'trx_data' => $fullTrx 
+    ]);
 
         } catch (\Exception $e) {
             DB::rollback();
-            return response()->json([
-                'status' => 'error',
-                'message' => "Terjadi kesalahan sistem."
-            ]);
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()]);
         }
     }
 }

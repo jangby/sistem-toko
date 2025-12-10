@@ -7,6 +7,7 @@ use App\Http\Controllers\ProductController;
 // use App\Http\Controllers\TransactionController; // (Nanti dibuat)
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
+use App\Models\Transaction;
 
 /*
 |--------------------------------------------------------------------------
@@ -72,6 +73,15 @@ Route::resource('tabungan', \App\Http\Controllers\SavingController::class)->only
 Route::get('/settings/whatsapp', [\App\Http\Controllers\SettingController::class, 'index'])->name('settings.wa');
 Route::post('/settings/whatsapp', [\App\Http\Controllers\SettingController::class, 'update'])->name('settings.wa.update');
 Route::post('/voice-command', [App\Http\Controllers\VoiceCommandController::class, 'process'])->name('voice.process');
+
+Route::get('/struk/{id}', function ($id) {
+    $trx = Transaction::with('details.product', 'cashier')->findOrFail($id);
+    return view('transactions.struk', compact('trx'));
+})->name('struk.print');
+
+// Route Helper Voice (API)
+Route::post('/voice/search', [App\Http\Controllers\VoiceCommandController::class, 'searchProduct'])->name('voice.search');
+Route::post('/voice/store', [App\Http\Controllers\VoiceCommandController::class, 'storeTransaction'])->name('voice.store');
 });
 
 // --- 4. KHUSUS KASIR (TRANSAKSI) ---
