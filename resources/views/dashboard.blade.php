@@ -159,137 +159,195 @@
         </div>
     </div>
 
-    <div x-data="voiceApp()" class="fixed bottom-6 left-6 z-50">
-    
-    <button @click="toggleListening()" 
-            class="w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition transform hover:scale-110 border-4 border-white"
-            :class="isListening ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-emerald-500 to-teal-500'">
+    <div x-data="voiceApp()" class="fixed bottom-6 left-6 z-50 flex items-end gap-3">
         
-        <svg x-show="!isListening" class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-        <svg x-show="isListening" class="w-8 h-8 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </button>
+        <button @click="toggleListening()" 
+                class="w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition transform hover:scale-110 border-4 border-white"
+                :class="isListening ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-emerald-500 to-teal-500'">
+            <svg x-show="!isListening" class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+            <svg x-show="isListening" class="w-8 h-8 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </button>
 
-    <div x-show="message" 
-         x-transition.opacity.duration.500ms
-         class="absolute bottom-20 left-0 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-xl w-72 border border-gray-200 dark:border-gray-700 z-50">
-        <p class="text-[10px] font-bold text-gray-400 uppercase mb-1">Status Suara</p>
-        <p class="text-sm font-bold text-gray-800 dark:text-white leading-relaxed" x-text="message"></p>
+        <button @click="showHelp = true" 
+                class="w-10 h-10 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-300 rounded-full shadow-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-700 transition mb-1"
+                title="Daftar Perintah Suara">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </button>
+
+        <div x-show="message && !showHelp" 
+             x-transition.opacity.duration.500ms
+             class="absolute bottom-20 left-0 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-xl w-72 border border-gray-200 dark:border-gray-700 z-40">
+            <p class="text-[10px] font-bold text-gray-400 uppercase mb-1">Status Suara</p>
+            <p class="text-sm font-bold text-gray-800 dark:text-white leading-relaxed" x-text="message"></p>
+        </div>
+
+        <div x-show="showHelp" 
+             style="display: none;"
+             class="fixed inset-0 z-[60] flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm"
+             x-transition.opacity>
+            
+            <div @click.away="showHelp = false" class="bg-white dark:bg-gray-900 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                
+                <div class="bg-gradient-to-r from-emerald-600 to-teal-600 p-5 flex justify-between items-center shrink-0">
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                        Daftar Perintah Suara
+                    </h3>
+                    <button @click="showHelp = false" class="text-white/80 hover:text-white bg-white/10 rounded-full p-1">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+
+                <div class="p-6 overflow-y-auto custom-scrollbar space-y-6">
+                    
+                    <div>
+                        <h4 class="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-2 border-b border-emerald-100 pb-1">🛒 Transaksi & Penjualan</h4>
+                        <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                            <li class="flex gap-2"><span class="text-emerald-500 font-bold">"</span>Jual 5 Kopi Kapal Api<span class="text-emerald-500 font-bold">"</span></li>
+                            <li class="flex gap-2"><span class="text-emerald-500 font-bold">"</span>Input dua Roti Tawar<span class="text-emerald-500 font-bold">"</span></li>
+                            <li class="flex gap-2"><span class="text-emerald-500 font-bold">"</span>Berapa harga jual Indomie?<span class="text-emerald-500 font-bold">"</span></li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h4 class="text-xs font-bold text-blue-600 uppercase tracking-wider mb-2 border-b border-blue-100 pb-1">📊 Laporan & WhatsApp</h4>
+                        <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                            <li class="flex gap-2"><span class="text-blue-500 font-bold">"</span>Kirim laporan penjualan hari ini<span class="text-blue-500 font-bold">"</span></li>
+                            <li class="flex gap-2"><span class="text-blue-500 font-bold">"</span>Kirim laporan penjualan Safinah bulan kemarin<span class="text-blue-500 font-bold">"</span></li>
+                            <li class="flex gap-2"><span class="text-blue-500 font-bold">"</span>Berapa keuntungan hari ini?<span class="text-blue-500 font-bold">"</span></li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h4 class="text-xs font-bold text-purple-600 uppercase tracking-wider mb-2 border-b border-purple-100 pb-1">📦 Stok & Data Barang</h4>
+                        <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                            <li class="flex gap-2"><span class="text-purple-500 font-bold">"</span>Cek stok Indomie<span class="text-purple-500 font-bold">"</span></li>
+                            <li class="flex gap-2"><span class="text-purple-500 font-bold">"</span>Barang apa saja yang menipis?<span class="text-purple-500 font-bold">"</span></li>
+                            <li class="flex gap-2"><span class="text-purple-500 font-bold">"</span>Siapa supplier Kopi?<span class="text-purple-500 font-bold">"</span></li>
+                            <li class="flex gap-2"><span class="text-purple-500 font-bold">"</span>Buat kategori baru Elektronik<span class="text-purple-500 font-bold">"</span></li>
+                        </ul>
+                    </div>
+
+                    <div>
+                        <h4 class="text-xs font-bold text-orange-600 uppercase tracking-wider mb-2 border-b border-orange-100 pb-1">💰 Keuangan & Simpanan</h4>
+                        <ul class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                            <li class="flex gap-2"><span class="text-orange-500 font-bold">"</span>Berapa total hutang toko?<span class="text-orange-500 font-bold">"</span></li>
+                            <li class="flex gap-2"><span class="text-orange-500 font-bold">"</span>Cek saldo tabungan<span class="text-orange-500 font-bold">"</span></li>
+                            <li class="flex gap-2"><span class="text-orange-500 font-bold">"</span>Tambah simpanan 50 ribu dari laci<span class="text-orange-500 font-bold">"</span></li>
+                            <li class="flex gap-2"><span class="text-orange-500 font-bold">"</span>Ambil simpanan 100 ribu<span class="text-orange-500 font-bold">"</span></li>
+                        </ul>
+                    </div>
+
+                </div>
+                
+                <div class="bg-gray-50 dark:bg-gray-800 p-4 text-center text-xs text-gray-400 border-t border-gray-100 dark:border-gray-700">
+                    Tips: Bicara dengan jelas dan pastikan mic aktif.
+                </div>
+            </div>
+        </div>
+
     </div>
 
-</div>
+    <script>
+        function voiceApp() {
+            return {
+                isListening: false,
+                message: '',
+                showHelp: false, // VARIABEL BARU UNTUK MODAL
+                recognition: null,
 
-<script>
-    function voiceApp() {
-        return {
-            isListening: false,
-            message: '',
-            recognition: null,
+                init() {
+                    if ('webkitSpeechRecognition' in window) {
+                        this.recognition = new webkitSpeechRecognition();
+                        this.recognition.continuous = false;
+                        this.recognition.lang = 'id-ID';
+                        this.recognition.interimResults = false;
 
-            init() {
-                if ('webkitSpeechRecognition' in window) {
-                    this.recognition = new webkitSpeechRecognition();
-                    this.recognition.continuous = false; // Stop otomatis setelah kalimat selesai
-                    this.recognition.lang = 'id-ID';
-                    this.recognition.interimResults = false;
+                        this.recognition.onstart = () => {
+                            this.isListening = true;
+                            this.message = "Silakan bicara...";
+                        };
 
-                    this.recognition.onstart = () => {
-                        this.isListening = true;
-                        this.message = "Silakan bicara...";
-                    };
+                        this.recognition.onend = () => {
+                            this.isListening = false;
+                        };
 
-                    this.recognition.onend = () => {
-                        this.isListening = false;
-                    };
+                        this.recognition.onresult = (event) => {
+                            const transcript = event.results[0][0].transcript;
+                            this.message = 'Memproses: "' + transcript + '"';
+                            this.sendToBackend(transcript);
+                        };
 
-                    this.recognition.onresult = (event) => {
-                        const transcript = event.results[0][0].transcript;
-                        this.message = 'Memproses: "' + transcript + '"';
-                        this.sendToBackend(transcript);
-                    };
+                        this.recognition.onerror = (event) => {
+                            this.isListening = false;
+                            if(event.error == 'no-speech') {
+                                this.message = "Tidak ada suara terdeteksi.";
+                            } else {
+                                this.message = "Error: " + event.error;
+                            }
+                        };
+                    } else {
+                        alert("Gunakan Google Chrome untuk fitur suara.");
+                    }
+                },
 
-                    this.recognition.onerror = (event) => {
-                        this.isListening = false;
-                        if(event.error == 'no-speech') {
-                            this.message = "Tidak ada suara terdeteksi.";
-                        } else {
-                            this.message = "Error: " + event.error;
+                toggleListening() {
+                    if (!this.recognition) this.init();
+                    if (this.isListening) {
+                        this.recognition.stop();
+                    } else {
+                        this.recognition.start();
+                    }
+                },
+
+                sendToBackend(text) {
+                    this.message = "Sedang mencari data...";
+                    fetch('{{ route("voice.process") }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        },
+                        body: JSON.stringify({ text: text })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        this.message = data.message;
+                        this.speak(data.message);
+
+                        if (data.status === 'success' && data.trx_data) {
+                            this.sendToNativeApp(data.trx_data);
+                            setTimeout(() => window.location.reload(), 4000);
                         }
-                    };
-                } else {
-                    alert("Gunakan Google Chrome untuk fitur suara.");
-                }
-            },
+                    })
+                    .catch(error => {
+                        console.error(error);
+                        this.message = "Gagal menghubungi server.";
+                        this.speak("Maaf, terjadi kesalahan koneksi.");
+                    });
+                },
 
-            toggleListening() {
-                if (!this.recognition) this.init();
-                
-                if (this.isListening) {
-                    this.recognition.stop();
-                } else {
-                    this.recognition.start();
-                }
-            },
+                speak(text) {
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = 'id-ID';
+                    window.speechSynthesis.speak(utterance);
+                },
 
-            sendToBackend(text) {
-                // Tampilkan loading visual
-                this.message = "Sedang mencari data...";
-
-                fetch('{{ route("voice.process") }}', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                    },
-                    body: JSON.stringify({ text: text })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    this.message = data.message;
-                    this.speak(data.message);
-
-                    // JIKA ADA TRANSAKSI SUKSES -> KIRIM STRUK
-                    if (data.status === 'success' && data.trx_data) {
-                        this.sendToNativeApp(data.trx_data);
-                        
-                        // Refresh Dashboard setelah bicara selesai
-                        setTimeout(() => window.location.reload(), 4000);
+                sendToNativeApp(dataTransaksi) {
+                    const jsonString = JSON.stringify(dataTransaksi);
+                    try {
+                        if (window.AndroidPOS && window.AndroidPOS.printStruk) {
+                            window.AndroidPOS.printStruk(jsonString);
+                        } else if (window.ReactNativeWebView) {
+                            window.ReactNativeWebView.postMessage(jsonString);
+                        } else {
+                            console.log("Struk Web View Mode");
+                        }
+                    } catch (e) {
+                        console.error("Print Error:", e);
                     }
-                })
-                .catch(error => {
-                    console.error(error);
-                    this.message = "Gagal menghubungi server.";
-                    this.speak("Maaf, terjadi kesalahan koneksi.");
-                });
-            },
-
-            // --- TTS (Bicara) ---
-            speak(text) {
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'id-ID';
-                window.speechSynthesis.speak(utterance);
-            },
-
-            // --- JEMBATAN KE APLIKASI (STRUK) ---
-            sendToNativeApp(dataTransaksi) {
-                const jsonString = JSON.stringify(dataTransaksi);
-                try {
-                    // Support Android Interface
-                    if (window.AndroidPOS && window.AndroidPOS.printStruk) {
-                        window.AndroidPOS.printStruk(jsonString);
-                        console.log("Struk dikirim ke Android");
-                    } 
-                    // Support WebView Standard
-                    else if (window.ReactNativeWebView) {
-                        window.ReactNativeWebView.postMessage(jsonString);
-                    }
-                    else {
-                        console.log("Mode Web: Struk tidak dicetak (Simulasi)");
-                    }
-                } catch (e) {
-                    console.error("Gagal print:", e);
                 }
             }
         }
-    }
-</script>
+    </script>
 </x-app-layout>
