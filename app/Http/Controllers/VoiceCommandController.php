@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use App\Models\Category;
 use App\Models\Transaction;
 use App\Models\TransactionDetail;
 use App\Models\Debt;
 use App\Models\Saving;
+use App\Models\CashMutation;
+use App\Services\WaService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -18,267 +21,365 @@ class VoiceCommandController extends Controller
     {
         $text = strtolower($request->input('text'));
 
-        // --- ROUTER PERINTAH ---
+        // --- ROUTER PERINTAH (URUTAN PENTING) ---
 
-        // 1. CEK KEUNTUNGAN / LABA (FITUR BARU)
+        // 1. KIRIM LAPORAN KE WA
+        if ($this->contains($text, ['kirim laporan', 'laporan wa', 'kirim wa'])) {
+            return $this->sendReport($text);
+        }
+
+        // 2. MANAJEMEN SIMPANAN / TABUNGAN (Tambah/Ambil)
+        if ($this->contains($text, ['tambah simpanan', 'tambah tabungan', 'ambil simpanan', 'ambil tabungan', 'tarik tabungan'])) {
+            return $this->manageSavings($text);
+        }
+
+        // 3. TAMBAH KATEGORI BARU
+        if ($this->contains($text, ['tambah kategori', 'buat kategori', 'bikin kategori'])) {
+            return $this->addCategory($text);
+        }
+
+        // 4. CEK STOK MENIPIS / RESTOCK
+        if ($this->contains($text, ['menipis', 'restok', 'habis', 'kulakan', 'belanja'])) {
+            return $this->checkLowStock();
+        }
+
+        // 5. CEK HARGA JUAL
+        if ($this->contains($text, ['harga jual', 'harganya', 'berapa harga'])) {
+            return $this->checkPrice($text);
+        }
+
+        // 6. CEK SUPPLIER / KATEGORI BARANG
+        if ($this->contains($text, ['supplier', 'pemasok', 'kategori', 'dari mana'])) {
+            return $this->checkInfo($text);
+        }
+
+        // 7. CEK KEUNTUNGAN
         if ($this->contains($text, ['untung', 'keuntungan', 'laba', 'profit'])) {
             return $this->checkProfit($text);
         }
 
-        // 2. CEK STOK
-        if ($this->contains($text, ['cek stok', 'sisa stok', 'stok', 'ada gak', 'ada tidak', 'tersedia'])) {
+        // 8. CEK STOK SPESIFIK
+        if ($this->contains($text, ['cek stok', 'sisa stok', 'ada gak', 'tersedia'])) {
             return $this->checkStock($text);
         }
 
-        // 3. CEK UTANG / PIUTANG
+        // 9. CEK UTANG / PIUTANG
         if ($this->contains($text, ['utang', 'piutang', 'kasbon', 'tagihan'])) {
             return $this->checkDebt($text);
         }
 
-        // 4. CEK TABUNGAN
-        if ($this->contains($text, ['tabungan', 'simpanan', 'dana darurat'])) {
-            return $this->checkSavings();
+        // 10. CEK SALDO TABUNGAN
+        if ($this->contains($text, ['cek tabungan', 'cek simpanan', 'total simpanan', 'dana darurat'])) {
+            return $this->checkSavingsBalance();
         }
 
-        // 5. TRANSAKSI (Default)
+        // 11. TRANSAKSI (Default)
         return $this->processTransaction($text);
     }
 
-    // --- LOGIKA BARU: CEK KEUNTUNGAN ---
-    private function checkProfit($text)
+    // =========================================================================
+    // MODUL 1: PELAPORAN WA
+    // =========================================================================
+    private function sendReport($text)
     {
-        // 1. Tentukan Rentang Waktu (Date Parsing)
         $dateInfo = $this->parseDateFromText($text);
         $startDate = $dateInfo['start'];
         $endDate = $dateInfo['end'];
         $periodName = $dateInfo['label'];
 
-        // 2. Cek apakah ada nama barang spesifik?
-        // Hapus kata kunci umum untuk mencari nama barang
-        $keywords = ['berapa', 'keuntungan', 'laba', 'profit', 'penjualan', 'hari', 'ini', 'kemarin', 'bulan', 'tahun', 'tanggal', 'dari', 'sampai', 'pada'];
+        // Cek filter produk
+        $productName = $this->extractProductName($text, ['kirim', 'laporan', 'penjualan', 'wa', 'ke', 'grup']);
         
-        // Hapus juga nama bulan dari text agar tidak dianggap nama barang
-        $months = ['januari', 'februari', 'maret', 'april', 'mei', 'juni', 'juli', 'agustus', 'september', 'oktober', 'november', 'desember'];
-        
-        $cleanText = str_replace(array_merge($keywords, $months), '', $text);
-        // Hapus angka (tanggal/tahun)
-        $cleanText = preg_replace('/\d+/', '', $cleanText);
-        $productName = trim($cleanText);
-
-        // 3. Query Database
         $query = TransactionDetail::with('product')
             ->whereHas('transaction', function($q) use ($startDate, $endDate) {
                 $q->whereBetween('created_at', [$startDate, $endDate]);
             });
 
-        // Jika ada nama barang spesifik
-        $isSpecificProduct = false;
-        if (!empty($productName) && strlen($productName) > 2) {
-            // Cari ID produk dulu
+        $title = "LAPORAN PENJUALAN";
+        if ($productName) {
             $product = Product::where('name', 'like', "%{$productName}%")->first();
             if ($product) {
                 $query->where('product_id', $product->id);
-                $productName = $product->name; // Gunakan nama asli dari DB
-                $isSpecificProduct = true;
+                $title .= " " . strtoupper($product->name);
             }
         }
 
+        $omset = 0;
+        $qty = 0;
         $details = $query->get();
 
-        // 4. Hitung Profit
-        // Rumus: (Harga Jual saat transaksi - Harga Beli Master) * Qty
-        // Catatan: Idealnya harga beli dicatat di history transaksi, tapi jika belum ada, kita pakai harga beli master saat ini.
-        $totalProfit = 0;
-        $totalQty = 0;
-
-        foreach ($details as $item) {
-            // Profit per item = Harga Jual (di struk) - Harga Modal (di data barang)
-            $margin = $item->price - $item->product->buy_price;
-            $totalProfit += ($margin * $item->qty);
-            $totalQty += $item->qty;
+        foreach($details as $d) {
+            $omset += ($d->price * $d->qty);
+            $qty += $d->qty;
         }
 
-        // 5. Susun Kalimat Jawaban
-        if ($totalQty == 0) {
-            return response()->json(['status' => 'success', 'message' => "Belum ada penjualan {$periodName}."]);
-        }
+        // Susun Pesan WA
+        $msg = "📊 *{$title}* 📊\n";
+        $msg .= "📅 Periode: {$periodName}\n";
+        $msg .= "--------------------------\n";
+        $msg .= "📦 Terjual: {$qty} Pcs\n";
+        $msg .= "💰 Omset: " . $this->bacaUang($omset) . "\n";
+        $msg .= "--------------------------\n";
+        $msg .= "Dikirim via Perintah Suara 🎤";
 
-        $profitText = $this->bacaUang($totalProfit);
+        // Kirim
+        WaService::sendGroupMessage($msg);
+
+        return response()->json(['status' => 'success', 'message' => "Laporan {$periodName} berhasil dikirim ke Grup WA."]);
+    }
+
+    // =========================================================================
+    // MODUL 2: MANAJEMEN SIMPANAN (BANK vs LACI)
+    // =========================================================================
+    private function manageSavings($text)
+    {
+        // 1. Tentukan Tipe
+        $type = (str_contains($text, 'tambah')) ? 'deposit' : 'withdrawal';
         
-        if ($isSpecificProduct) {
-            $msg = "Keuntungan penjualan {$productName} {$periodName} adalah {$profitText}. Terjual {$totalQty} pcs.";
-        } else {
-            $msg = "Total keuntungan toko {$periodName} adalah {$profitText}. Dari {$totalQty} barang terjual.";
+        // 2. Tentukan Sumber (Laci/Kas vs Manual/Bank)
+        $source = 'manual'; // Default Luar
+        if (str_contains($text, 'laci') || str_contains($text, 'kas')) {
+            $source = 'cash';
         }
 
-        return response()->json(['status' => 'success', 'message' => $msg]);
-    }
-
-    // --- HELPER PARSING TANGGAL CANGGIH ---
-    private function parseDateFromText($text)
-    {
-        $dt = Carbon::now();
-
-        // 1. Kemarin
-        if (str_contains($text, 'kemarin')) {
-            return [
-                'start' => Carbon::yesterday()->startOfDay(), 
-                'end' => Carbon::yesterday()->endOfDay(), 
-                'label' => 'kemarin'
-            ];
-        }
-
-        // 2. Bulan Kemarin
-        if (str_contains($text, 'bulan lalu') || str_contains($text, 'bulan kemarin')) {
-            return [
-                'start' => Carbon::now()->subMonth()->startOfMonth(), 
-                'end' => Carbon::now()->subMonth()->endOfMonth(), 
-                'label' => 'bulan lalu'
-            ];
-        }
-
-        // 3. Bulan Ini
-        if (str_contains($text, 'bulan ini')) {
-            return [
-                'start' => Carbon::now()->startOfMonth(), 
-                'end' => Carbon::now()->endOfMonth(), 
-                'label' => 'bulan ini'
-            ];
-        }
-
-        // 4. Deteksi Tanggal Spesifik (e.g., "1 desember 2025")
-        // Regex: Angka(1-2 digit) Spasi Kata(Bulan) Spasi Angka(4 digit)
-        if (preg_match('/(\d{1,2})\s+([a-z]+)\s+(\d{4})/', $text, $matches)) {
-            $day = $matches[1];
-            $monthName = $matches[2];
-            $year = $matches[3];
-            
-            $monthMap = [
-                'januari' => 1, 'februari' => 2, 'maret' => 3, 'april' => 4, 
-                'mei' => 5, 'juni' => 6, 'juli' => 7, 'agustus' => 8, 
-                'september' => 9, 'oktober' => 10, 'november' => 11, 'desember' => 12
-            ];
-
-            if (isset($monthMap[$monthName])) {
-                $month = $monthMap[$monthName];
-                $date = Carbon::create($year, $month, $day);
-                return [
-                    'start' => $date->copy()->startOfDay(),
-                    'end' => $date->copy()->endOfDay(),
-                    'label' => "tanggal $day $monthName $year"
-                ];
-            }
-        }
-
-        // 5. Default: HARI INI
-        return [
-            'start' => Carbon::today()->startOfDay(), 
-            'end' => Carbon::today()->endOfDay(), 
-            'label' => 'hari ini'
-        ];
-    }
-
-    // --- LOGIKA LAINNYA (SAMA SEPERTI SEBELUMNYA) ---
-
-    private function checkStock($text)
-    {
-        $keywords = ['cek stok', 'cek', 'stok', 'sisa', 'berapa', 'barang', 'ada gak', 'ada tidak', 'apakah'];
-        $cleanName = str_replace($keywords, '', $text);
-        $cleanName = trim($cleanName);
-
-        if (empty($cleanName)) return response()->json(['status' => 'info', 'message' => "Sebutkan nama barangnya."]);
-
-        $product = Product::where('name', 'like', "%{$cleanName}%")->first();
-
-        if ($product) {
-            $msg = "Stok {$product->name} sisa {$product->stock} {$product->unit}.";
-            return response()->json(['status' => 'success', 'message' => $msg]);
-        } else {
-            return response()->json(['status' => 'error', 'message' => "Barang {$cleanName} tidak ditemukan."]);
-        }
-    }
-
-    private function checkDebt($text)
-    {
-        $receivable = Debt::where('type', 'receivable')->where('status', '!=', 'paid')->sum(DB::raw('amount - paid_amount'));
-        $payable = Debt::where('type', 'payable')->where('status', '!=', 'paid')->sum(DB::raw('amount - paid_amount'));
-
-        if (str_contains($text, 'utang')) {
-            $msg = "Sisa utang toko anda adalah " . $this->bacaUang($payable);
-        } elseif (str_contains($text, 'piutang') || str_contains($text, 'kasbon')) {
-            $msg = "Total piutang pelanggan adalah " . $this->bacaUang($receivable);
-        } else {
-            $msg = "Total piutang " . $this->bacaUang($receivable) . ". Dan utang toko " . $this->bacaUang($payable);
-        }
-        return response()->json(['status' => 'success', 'message' => $msg]);
-    }
-
-    private function checkSavings()
-    {
-        $deposit = Saving::where('type', 'deposit')->sum('amount');
-        $withdraw = Saving::where('type', 'withdrawal')->sum('amount');
-        $balance = $deposit - $withdraw;
-        return response()->json(['status' => 'success', 'message' => "Saldo tabungan toko saat ini " . $this->bacaUang($balance)]);
-    }
-
-    private function processTransaction($text)
-    {
-        preg_match('/\d+/', $text, $matches);
-        $qty = $matches[0] ?? 1;
-
-        $keywords = ['jual', 'beli', 'input', 'masukkan', 'buah', 'pcs', 'bungkus', 'kilo', $qty];
-        $cleanName = str_replace($keywords, '', $text);
-        $cleanName = trim($cleanName);
-
-        $product = Product::where('name', 'like', "%{$cleanName}%")->first();
-
-        if (!$product) return response()->json(['status' => 'error', 'message' => "Barang tidak ditemukan."]);
-        if ($product->stock < $qty) return response()->json(['status' => 'error', 'message' => "Stok kurang. Sisa {$product->stock}"]);
+        // 3. Ambil Nominal
+        $amount = $this->parseNominal($text);
+        if ($amount <= 0) return response()->json(['status' => 'error', 'message' => "Sebutkan nominal uangnya."]);
 
         try {
             DB::beginTransaction();
-            $product->decrement('stock', $qty);
-            $total = $product->sell_price * $qty;
 
-            $trx = Transaction::create([
-                'invoice_no' => 'VC-' . date('ymdHis'),
-                'user_id' => Auth::id(),
-                'total_amount' => $total,
-                'pay_amount' => $total,
-                'change_amount' => 0,
-                'payment_method' => 'cash',
+            // Cek Saldo jika narik
+            if ($type == 'withdrawal') {
+                $current = Saving::where('type', 'deposit')->sum('amount') - Saving::where('type', 'withdrawal')->sum('amount');
+                if ($amount > $current) return response()->json(['status' => 'error', 'message' => "Saldo tabungan tidak cukup."]);
+            }
+
+            Saving::create([
+                'date' => now(),
+                'type' => $type,
+                'amount' => $amount,
+                'source' => $source,
+                'description' => 'Via Voice Command'
             ]);
 
-            TransactionDetail::create([
-                'transaction_id' => $trx->id,
-                'product_id' => $product->id,
-                'qty' => $qty,
-                'price' => $product->sell_price,
-            ]);
+            // Jika dari Laci & Nabung -> Potong Kas Toko
+            if ($type == 'deposit' && $source == 'cash') {
+                CashMutation::create([
+                    'user_id' => Auth::id(),
+                    'type' => 'out',
+                    'amount' => $amount,
+                    'description' => 'Setor ke Tabungan (Voice)',
+                    'date' => now()
+                ]);
+            }
+            
+            // Jika Ambil Tabungan & Masuk Laci -> Tambah Kas Toko
+            if ($type == 'withdrawal' && $source == 'cash') {
+                CashMutation::create([
+                    'user_id' => Auth::id(),
+                    'type' => 'in',
+                    'amount' => $amount,
+                    'description' => 'Tarik dari Tabungan (Voice)',
+                    'date' => now()
+                ]);
+            }
+
             DB::commit();
+            $action = ($type == 'deposit') ? "disimpan" : "diambil";
+            $from = ($source == 'cash') ? "dari kas toko" : "dari luar/bank";
+            
+            return response()->json(['status' => 'success', 'message' => "Oke, uang " . $this->bacaUang($amount) . " berhasil {$action} {$from}."]);
 
-            $fullTrx = Transaction::with(['details.product', 'cashier'])->find($trx->id);
-            return response()->json([
-                'status' => 'success',
-                'message' => "Oke, {$qty} {$product->name} terjual. Total " . $this->bacaUang($total),
-                'trx_data' => $fullTrx
-            ]);
         } catch (\Exception $e) {
             DB::rollback();
-            return response()->json(['status' => 'error', 'message' => "Gagal memproses transaksi."]);
+            return response()->json(['status' => 'error', 'message' => "Gagal memproses simpanan."]);
         }
     }
 
-    private function contains($str, array $arr)
+    // =========================================================================
+    // MODUL 3: STOK MENIPIS
+    // =========================================================================
+    private function checkLowStock()
     {
-        foreach($arr as $a) { if (stripos($str, $a) !== false) return true; }
-        return false;
+        $products = Product::whereColumn('stock', '<=', 'min_stock')->take(5)->get();
+        
+        if ($products->isEmpty()) {
+            return response()->json(['status' => 'success', 'message' => "Semua stok aman. Tidak ada yang perlu direstok."]);
+        }
+
+        $names = $products->pluck('name')->implode(', ');
+        $count = $products->count();
+        
+        return response()->json(['status' => 'success', 'message' => "Ada {$count} barang menipis: {$names}. Segera lakukan restok."]);
     }
 
-    private function bacaUang($number)
+    // =========================================================================
+    // MODUL 4: HARGA JUAL, SUPPLIER, KATEGORI
+    // =========================================================================
+    private function checkPrice($text)
     {
-        if ($number >= 1000000) return round($number/1000000, 1) . " juta rupiah";
-        if ($number >= 1000) return round($number/1000) . " ribu rupiah";
-        return $number . " rupiah";
+        $name = $this->extractProductName($text, ['berapa', 'harga', 'jual', 'harganya']);
+        $product = Product::where('name', 'like', "%{$name}%")->first();
+        if(!$product) return response()->json(['status' => 'error', 'message' => "Barang tidak ditemukan."]);
+        
+        return response()->json(['status' => 'success', 'message' => "Harga jual {$product->name} adalah " . $this->bacaUang($product->sell_price)]);
+    }
+
+    private function checkInfo($text)
+    {
+        $name = $this->extractProductName($text, ['siapa', 'apa', 'nama', 'supplier', 'pemasok', 'kategori', 'dari', 'mana']);
+        $product = Product::with(['supplier', 'category'])->where('name', 'like', "%{$name}%")->first();
+        if(!$product) return response()->json(['status' => 'error', 'message' => "Barang tidak ditemukan."]);
+
+        $msg = "Barang {$product->name}. ";
+        if (str_contains($text, 'supplier') || str_contains($text, 'pemasok') || str_contains($text, 'dari mana')) {
+            $sup = $product->supplier ? $product->supplier->name : "Belum ada supplier";
+            $msg .= "Suppliernya adalah {$sup}.";
+        }
+        if (str_contains($text, 'kategori')) {
+            $cat = $product->category ? $product->category->name : "Tanpa kategori";
+            $msg .= "Kategorinya adalah {$cat}.";
+        }
+        
+        return response()->json(['status' => 'success', 'message' => $msg]);
+    }
+
+    private function addCategory($text)
+    {
+        // Text: "Tambah kategori baru Snack"
+        $name = str_replace(['tambah', 'buat', 'bikin', 'kategori', 'baru', 'namanya'], '', $text);
+        $name = trim(ucwords($name));
+
+        if (empty($name)) return response()->json(['status' => 'error', 'message' => "Sebutkan nama kategorinya."]);
+
+        Category::firstOrCreate(['name' => $name]);
+        return response()->json(['status' => 'success', 'message' => "Kategori {$name} berhasil dibuat."]);
+    }
+
+    // =========================================================================
+    // HELPER & UTILS
+    // =========================================================================
+    
+    private function extractProductName($text, $keywordsToRemove)
+    {
+        $text = str_replace($keywordsToRemove, '', $text);
+        // Hapus keterangan waktu
+        $timeWords = ['hari', 'ini', 'kemarin', 'bulan', 'lalu', 'tahun', 'tanggal', 'desember', 'januari', 'februari', 'maret', 'april', 'mei', 'juni', 'juli', 'agustus', 'september', 'oktober', 'november'];
+        $text = str_replace($timeWords, '', $text);
+        return trim(preg_replace('/\d+/', '', $text));
+    }
+
+    private function parseNominal($text)
+    {
+        // Clean text
+        $clean = str_replace(['rp', '.', ','], '', $text);
+        
+        // Cek angka explicit "50000"
+        preg_match('/\d+/', $clean, $matches);
+        $base = isset($matches[0]) ? (int)$matches[0] : 0;
+
+        // Cek multiplier kata
+        $multiplier = 1;
+        if (str_contains($text, 'juta')) $multiplier = 1000000;
+        elseif (str_contains($text, 'ribu')) $multiplier = 1000;
+        elseif (str_contains($text, 'ratus')) $multiplier = 100;
+
+        // Logic konversi kata ke angka (satu, dua...) ada di Frontend JS
+        // Di sini kita asumsi frontend mengirim angka atau backend parse angka digit
+        
+        return $base * $multiplier;
+    }
+
+    // --- REUSED FUNCTIONS (Sama seperti sebelumnya) ---
+    private function checkProfit($text) { /* ... Logika Profit sebelumnya ... */ 
+        $dateInfo = $this->parseDateFromText($text);
+        $startDate = $dateInfo['start']; $endDate = $dateInfo['end']; $periodName = $dateInfo['label'];
+        
+        $productName = $this->extractProductName($text, ['berapa', 'keuntungan', 'laba', 'profit', 'penjualan']);
+        
+        $query = TransactionDetail::with('product')->whereHas('transaction', function($q) use ($startDate, $endDate) {
+            $q->whereBetween('created_at', [$startDate, $endDate]);
+        });
+
+        $isSpec = false;
+        if($productName && strlen($productName) > 2) {
+            $prod = Product::where('name', 'like', "%{$productName}%")->first();
+            if($prod) { $query->where('product_id', $prod->id); $productName = $prod->name; $isSpec = true; }
+        }
+
+        $details = $query->get();
+        $profit = 0; $qty = 0;
+        foreach($details as $item) { $profit += ($item->price - $item->product->buy_price) * $item->qty; $qty += $item->qty; }
+
+        if($qty == 0) return response()->json(['status' => 'success', 'message' => "Belum ada data penjualan {$periodName}."]);
+        
+        $msg = $isSpec ? "Keuntungan {$productName} {$periodName} adalah " : "Total keuntungan {$periodName} adalah ";
+        $msg .= $this->bacaUang($profit);
+        return response()->json(['status' => 'success', 'message' => $msg]);
+    }
+
+    private function parseDateFromText($text) { /* ... Logika Date sebelumnya ... */ 
+        if (str_contains($text, 'kemarin')) return ['start' => Carbon::yesterday()->startOfDay(), 'end' => Carbon::yesterday()->endOfDay(), 'label' => 'kemarin'];
+        if (str_contains($text, 'bulan lalu') || str_contains($text, 'bulan kemarin')) return ['start' => Carbon::now()->subMonth()->startOfMonth(), 'end' => Carbon::now()->subMonth()->endOfMonth(), 'label' => 'bulan lalu'];
+        if (str_contains($text, 'bulan ini')) return ['start' => Carbon::now()->startOfMonth(), 'end' => Carbon::now()->endOfMonth(), 'label' => 'bulan ini'];
+        if (preg_match('/(\d{1,2})\s+([a-z]+)\s+(\d{4})/', $text, $matches)) {
+            $map = ['januari'=>1,'februari'=>2,'maret'=>3,'april'=>4,'mei'=>5,'juni'=>6,'juli'=>7,'agustus'=>8,'september'=>9,'oktober'=>10,'november'=>11,'desember'=>12];
+            if(isset($map[$matches[2]])) {
+                $d = Carbon::create($matches[3], $map[$matches[2]], $matches[1]);
+                return ['start' => $d->copy()->startOfDay(), 'end' => $d->copy()->endOfDay(), 'label' => "tanggal {$matches[1]} {$matches[2]}"];
+            }
+        }
+        return ['start' => Carbon::today()->startOfDay(), 'end' => Carbon::today()->endOfDay(), 'label' => 'hari ini'];
+    }
+
+    // Default functions
+    private function checkStock($text) {
+        $name = $this->extractProductName($text, ['cek', 'stok', 'sisa', 'ada', 'gak']);
+        $p = Product::where('name', 'like', "%{$name}%")->first();
+        return $p ? response()->json(['status'=>'success', 'message'=>"Stok {$p->name} sisa {$p->stock} {$p->unit}."]) 
+                  : response()->json(['status'=>'error', 'message'=>"Barang tidak ditemukan."]);
+    }
+
+    private function checkDebt($text) {
+        $rec = Debt::where('type', 'receivable')->where('status', '!=', 'paid')->sum(DB::raw('amount - paid_amount'));
+        $pay = Debt::where('type', 'payable')->where('status', '!=', 'paid')->sum(DB::raw('amount - paid_amount'));
+        $msg = (str_contains($text, 'utang')) ? "Utang toko {$this->bacaUang($pay)}" : "Piutang pelanggan {$this->bacaUang($rec)}";
+        return response()->json(['status'=>'success', 'message'=>$msg]);
+    }
+
+    private function checkSavingsBalance() {
+        $bal = Saving::where('type', 'deposit')->sum('amount') - Saving::where('type', 'withdrawal')->sum('amount');
+        return response()->json(['status'=>'success', 'message'=>"Total simpanan {$this->bacaUang($bal)}"]);
+    }
+
+    private function processTransaction($text) {
+        preg_match('/\d+/', $text, $matches); $qty = $matches[0] ?? 1;
+        $name = $this->extractProductName($text, ['jual', 'beli', 'input', $qty]);
+        $p = Product::where('name', 'like', "%{$name}%")->first();
+        
+        if(!$p) return response()->json(['status'=>'error', 'message'=>"Barang tidak ditemukan."]);
+        if($p->stock < $qty) return response()->json(['status'=>'error', 'message'=>"Stok kurang."]);
+
+        try {
+            DB::beginTransaction();
+            $p->decrement('stock', $qty);
+            $total = $p->sell_price * $qty;
+            $trx = Transaction::create(['invoice_no'=>'VC-'.date('ymdHis'), 'user_id'=>Auth::id(), 'total_amount'=>$total, 'pay_amount'=>$total, 'change_amount'=>0]);
+            TransactionDetail::create(['transaction_id'=>$trx->id, 'product_id'=>$p->id, 'qty'=>$qty, 'price'=>$p->sell_price]);
+            DB::commit();
+            $fullTrx = Transaction::with(['details.product', 'cashier'])->find($trx->id);
+            return response()->json(['status'=>'success', 'message'=>"Oke, {$qty} {$p->name} terjual.", 'trx_data'=>$fullTrx]);
+        } catch (\Exception $e) { DB::rollback(); return response()->json(['status'=>'error', 'message'=>'Error system']); }
+    }
+
+    private function contains($str, array $arr) {
+        foreach($arr as $a) { if (stripos($str, $a) !== false) return true; } return false;
+    }
+
+    private function bacaUang($number) {
+        if ($number >= 1000000) return round($number/1000000, 1) . " juta";
+        if ($number >= 1000) return round($number/1000) . " ribu";
+        return $number;
     }
 }
