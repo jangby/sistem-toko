@@ -159,20 +159,25 @@
         </div>
     </div>
 
-    <div x-data="voiceBot()" class="fixed bottom-6 left-6 z-50">
-    
-    <button @click="startSession()" 
-            class="w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition transform hover:scale-110 border-4 border-white"
-            :class="listening ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-emerald-500 to-teal-500'">
-        <svg x-show="!listening" class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-        <svg x-show="listening" class="w-8 h-8 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </button>
+    <div x-data="voiceApp()" class="fixed bottom-6 left-6 z-50">
+        
+        <button @click="startListening()" 
+                class="w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition transform hover:scale-110"
+                :class="isListening ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-blue-600 to-cyan-500'">
+            
+            <svg x-show="!isListening" class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+            
+            <svg x-show="isListening" class="w-7 h-7 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </button>
 
-    <div x-show="message" x-transition class="absolute bottom-20 left-0 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-xl w-72 border border-gray-200 dark:border-gray-700">
-        <p class="text-[10px] font-bold text-gray-400 uppercase mb-1">Asisten Toko</p>
-        <p class="text-sm font-bold text-gray-800 dark:text-white leading-relaxed" x-text="message"></p>
+        <div x-show="statusMessage" 
+             x-transition 
+             class="absolute bottom-16 left-0 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-lg w-64 border border-gray-100 dark:border-gray-700">
+            <p class="text-xs font-bold text-gray-400 uppercase mb-1">Status Suara</p>
+            <p class="text-sm font-semibold text-gray-800 dark:text-white" x-text="statusMessage"></p>
+        </div>
+
     </div>
-</div>
 
 <script>
     function voiceBot() {
