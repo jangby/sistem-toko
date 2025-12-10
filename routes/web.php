@@ -67,6 +67,11 @@ Route::resource('users', \App\Http\Controllers\UserController::class);
 Route::post('/debts/{id}/payment', [App\Http\Controllers\DebtController::class, 'addPayment'])->name('debts.payment');
 Route::resource('debts', \App\Http\Controllers\DebtController::class);
 Route::resource('tabungan', \App\Http\Controllers\SavingController::class)->only(['index', 'store']);
+
+// Menu Setting WAHA
+Route::get('/settings/whatsapp', [\App\Http\Controllers\SettingController::class, 'index'])->name('settings.wa');
+Route::post('/settings/whatsapp', [\App\Http\Controllers\SettingController::class, 'update'])->name('settings.wa.update');
+Route::post('/voice-command', [App\Http\Controllers\VoiceCommandController::class, 'process'])->name('voice.process');
 });
 
 // --- 4. KHUSUS KASIR (TRANSAKSI) ---

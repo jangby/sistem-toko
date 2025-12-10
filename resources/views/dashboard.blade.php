@@ -140,6 +140,15 @@
                     </a>
                     @endif
 
+                    <a href="{{ route('settings.wa') }}" class="group flex flex-col items-center">
+    <div class="w-16 h-16 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 flex items-center justify-center mb-2 group-hover:bg-teal-50 group-hover:scale-105 transition duration-300">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+        </svg>
+    </div>
+    <span class="text-xs font-medium text-gray-700 dark:text-gray-300">Setting WA</span>
+</a>
+
                 </div>
             </div>
 
@@ -149,4 +158,104 @@
 
         </div>
     </div>
+
+    <div x-data="voiceApp()" class="fixed bottom-6 left-6 z-50">
+        
+        <button @click="startListening()" 
+                class="w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition transform hover:scale-110"
+                :class="isListening ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-blue-600 to-cyan-500'">
+            
+            <svg x-show="!isListening" class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+            
+            <svg x-show="isListening" class="w-7 h-7 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </button>
+
+        <div x-show="statusMessage" 
+             x-transition 
+             class="absolute bottom-16 left-0 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-lg w-64 border border-gray-100 dark:border-gray-700">
+            <p class="text-xs font-bold text-gray-400 uppercase mb-1">Status Suara</p>
+            <p class="text-sm font-semibold text-gray-800 dark:text-white" x-text="statusMessage"></p>
+        </div>
+
+    </div>
+
+    <script>
+        function voiceApp() {
+            return {
+                isListening: false,
+                statusMessage: '',
+                recognition: null,
+
+                init() {
+                    // Cek ketersediaan Browser API
+                    if ('webkitSpeechRecognition' in window) {
+                        this.recognition = new webkitSpeechRecognition();
+                        this.recognition.continuous = false;
+                        this.recognition.lang = 'id-ID'; // Bahasa Indonesia
+                        this.recognition.interimResults = false;
+
+                        this.recognition.onstart = () => {
+                            this.isListening = true;
+                            this.statusMessage = "Mendengarkan... Silakan bicara.";
+                        };
+
+                        this.recognition.onend = () => {
+                            this.isListening = false;
+                        };
+
+                        this.recognition.onresult = (event) => {
+                            const transcript = event.results[0][0].transcript;
+                            this.statusMessage = 'Memproses: "' + transcript + '"';
+                            this.sendToBackend(transcript);
+                        };
+
+                        this.recognition.onerror = (event) => {
+                            this.isListening = false;
+                            this.statusMessage = "Error: " + event.error;
+                        };
+                    } else {
+                        alert("Browser Anda tidak mendukung fitur suara. Gunakan Google Chrome.");
+                    }
+                },
+
+                startListening() {
+                    if (!this.recognition) this.init();
+                    this.recognition.start();
+                },
+
+                sendToBackend(text) {
+                    fetch('{{ route("voice.process") }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        },
+                        body: JSON.stringify({ text: text })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        this.statusMessage = data.message;
+                        this.speak(data.message); // Komputer bicara balasan
+                        
+                        // Refresh dashboard jika sukses (untuk update omset)
+                        if(data.status === 'success') {
+                            setTimeout(() => window.location.reload(), 3000);
+                        }
+                    })
+                    .catch(error => {
+                        console.error(error);
+                        this.statusMessage = "Gagal memproses pesanan.";
+                        this.speak("Maaf, terjadi kesalahan sistem.");
+                    });
+                },
+
+                // Fitur Text-to-Speech (Komputer Bicara)
+                speak(text) {
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = 'id-ID';
+                    window.speechSynthesis.speak(utterance);
+                }
+            }
+        }
+    </script>
 </x-app-layout>
