@@ -161,19 +161,18 @@
 
     <div x-data="voiceApp()" class="fixed bottom-6 left-6 z-50">
     
-    <button @click="startSession()" 
+    <button @click="toggleListening()" 
             class="w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition transform hover:scale-110 border-4 border-white"
             :class="isListening ? 'bg-red-500 animate-pulse' : 'bg-gradient-to-r from-emerald-500 to-teal-500'">
         
         <svg x-show="!isListening" class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-        
         <svg x-show="isListening" class="w-8 h-8 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
     </button>
 
     <div x-show="message" 
-         x-transition 
-         class="absolute bottom-20 left-0 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-xl w-72 border border-gray-200 dark:border-gray-700">
-        <p class="text-[10px] font-bold text-gray-400 uppercase mb-1">Asisten Toko</p>
+         x-transition.opacity.duration.500ms
+         class="absolute bottom-20 left-0 bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-xl w-72 border border-gray-200 dark:border-gray-700 z-50">
+        <p class="text-[10px] font-bold text-gray-400 uppercase mb-1">Status Suara</p>
         <p class="text-sm font-bold text-gray-800 dark:text-white leading-relaxed" x-text="message"></p>
     </div>
 
@@ -182,219 +181,113 @@
 <script>
     function voiceApp() {
         return {
-            isListening: false, // Perbaikan: Sesuaikan dengan HTML
+            isListening: false,
             message: '',
-            step: 0, // 0:Idle, 1:Cari Barang, 2:Tanya Qty, 3:Tanya Uang
-            data: { id: null, name: '', price: 0, qty: 0, pay: 0 },
             recognition: null,
 
             init() {
-                // Cek support browser
                 if ('webkitSpeechRecognition' in window) {
                     this.recognition = new webkitSpeechRecognition();
-                    this.recognition.continuous = false;
+                    this.recognition.continuous = false; // Stop otomatis setelah kalimat selesai
                     this.recognition.lang = 'id-ID';
                     this.recognition.interimResults = false;
-                    
-                    this.recognition.onstart = () => { 
-                        this.isListening = true; 
-                        this.message = "Mendengarkan...";
+
+                    this.recognition.onstart = () => {
+                        this.isListening = true;
+                        this.message = "Silakan bicara...";
                     };
-                    
-                    this.recognition.onend = () => { 
-                        this.isListening = false; 
+
+                    this.recognition.onend = () => {
+                        this.isListening = false;
                     };
-                    
+
                     this.recognition.onresult = (event) => {
-                        const text = event.results[0][0].transcript.toLowerCase();
-                        this.processInput(text);
+                        const transcript = event.results[0][0].transcript;
+                        this.message = 'Memproses: "' + transcript + '"';
+                        this.sendToBackend(transcript);
                     };
 
                     this.recognition.onerror = (event) => {
                         this.isListening = false;
-                        console.error("Speech Error:", event.error);
-                        this.say("Maaf, tidak terdengar. Coba lagi.");
+                        if(event.error == 'no-speech') {
+                            this.message = "Tidak ada suara terdeteksi.";
+                        } else {
+                            this.message = "Error: " + event.error;
+                        }
                     };
                 } else {
-                    alert("Browser tidak support. Gunakan Google Chrome.");
+                    alert("Gunakan Google Chrome untuk fitur suara.");
                 }
             },
 
-            // Mulai Percakapan
-            startSession() {
-                if(!this.recognition) this.init();
+            toggleListening() {
+                if (!this.recognition) this.init();
                 
-                if (this.step === 0) {
-                    this.say("Sebutkan barang yang dijual.");
-                    this.step = 1;
-                }
-                
-                // Beri jeda agar komputer selesai bicara baru mendengarkan
-                setTimeout(() => { 
-                    try { this.recognition.start(); } catch(e) {} 
-                }, 1500);
-            },
-
-            // Otak Percakapan
-            processInput(text) {
-                console.log("Input: " + text + " | Step: " + this.step);
-
-                // --- STEP 1: CARI BARANG ---
-                if (this.step === 1) {
-                    this.message = "Mencari: " + text + "...";
-                    
-                    // Cek jika user langsung sebut jumlah (misal: "2 Indomie")
-                    let qtyMatch = text.match(/\d+/);
-                    if(qtyMatch) this.data.qty = parseInt(qtyMatch[0]);
-
-                    // Panggil API Search
-                    fetch('{{ route("voice.search") }}', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
-                        body: JSON.stringify({ keyword: text })
-                    })
-                    .then(r => r.json())
-                    .then(res => {
-                        if (res.status === 'found') {
-                            this.data.id = res.data.id;
-                            this.data.name = res.data.name;
-                            this.data.price = res.data.sell_price;
-                            
-                            if (this.data.qty > 0) {
-                                // Jika jumlah sudah disebut di awal
-                                this.step = 3;
-                                this.askPayment();
-                            } else {
-                                // Jika belum, tanya jumlah
-                                this.step = 2;
-                                this.say("Oke, " + res.data.name + ". Berapa jumlahnya?");
-                                setTimeout(() => this.recognition.start(), 2000);
-                            }
-                        } else {
-                            this.say("Barang tidak ditemukan. Coba lagi.");
-                            setTimeout(() => this.recognition.start(), 2000);
-                        }
-                    });
-                }
-
-                // --- STEP 2: TANYA JUMLAH ---
-                else if (this.step === 2) {
-                    let number = this.parseNumber(text);
-                    if (number > 0) {
-                        this.data.qty = number;
-                        this.step = 3;
-                        this.askPayment();
-                    } else {
-                        this.say("Maaf, sebutkan angkanya saja. Berapa banyak?");
-                        setTimeout(() => this.recognition.start(), 2000);
-                    }
-                }
-
-                // --- STEP 3: TANYA PEMBAYARAN ---
-                else if (this.step === 3) {
-                    let total = this.data.price * this.data.qty;
-                    
-                    if (text.includes("pas") || text.includes("sama")) {
-                        this.data.pay = total;
-                    } else {
-                        this.data.pay = this.parseMoney(text);
-                    }
-
-                    if (this.data.pay >= total) {
-                        this.finalizeTransaction();
-                    } else {
-                        this.say("Uang kurang. Totalnya " + total + ". Uangnya berapa?");
-                        setTimeout(() => this.recognition.start(), 3000);
-                    }
+                if (this.isListening) {
+                    this.recognition.stop();
+                } else {
+                    this.recognition.start();
                 }
             },
 
-            // Fungsi Helper: Tanya Uang
-            askPayment() {
-                let total = this.data.price * this.data.qty;
-                let formatted = new Intl.NumberFormat('id-ID').format(total);
-                this.say("Total " + formatted + ". Uangnya berapa?");
-                setTimeout(() => this.recognition.start(), 2500);
-            },
+            sendToBackend(text) {
+                // Tampilkan loading visual
+                this.message = "Sedang mencari data...";
 
-            // Fungsi Helper: Finalisasi
-            finalizeTransaction() {
-                this.say("Memproses transaksi...");
-                
-                fetch('{{ route("voice.store") }}', {
+                fetch('{{ route("voice.process") }}', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
-                    body: JSON.stringify({ 
-                        product_id: this.data.id, 
-                        qty: this.data.qty, 
-                        pay_amount: this.data.pay 
-                    })
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                    },
+                    body: JSON.stringify({ text: text })
                 })
-                .then(r => r.json())
-                .then(res => {
-                    if (res.status === 'success') {
-                        this.say(res.message);
-                        
-                        // Kirim ke Native App (Android)
-                        this.sendToNativeApp(res.trx_data);
+                .then(response => response.json())
+                .then(data => {
+                    this.message = data.message;
+                    this.speak(data.message);
 
-                        // Reset dan Refresh Dashboard
-                        this.step = 0;
-                        this.data = { id: null, name: '', price: 0, qty: 0, pay: 0 };
-                        setTimeout(() => window.location.reload(), 3000); 
-                    } else {
-                        this.say("Gagal. " + res.message);
-                        this.step = 0;
+                    // JIKA ADA TRANSAKSI SUKSES -> KIRIM STRUK
+                    if (data.status === 'success' && data.trx_data) {
+                        this.sendToNativeApp(data.trx_data);
+                        
+                        // Refresh Dashboard setelah bicara selesai
+                        setTimeout(() => window.location.reload(), 4000);
                     }
+                })
+                .catch(error => {
+                    console.error(error);
+                    this.message = "Gagal menghubungi server.";
+                    this.speak("Maaf, terjadi kesalahan koneksi.");
                 });
             },
 
-            // --- FUNGSI JEMBATAN KE APLIKASI ANDROID/IOS ---
+            // --- TTS (Bicara) ---
+            speak(text) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'id-ID';
+                window.speechSynthesis.speak(utterance);
+            },
+
+            // --- JEMBATAN KE APLIKASI (STRUK) ---
             sendToNativeApp(dataTransaksi) {
                 const jsonString = JSON.stringify(dataTransaksi);
                 try {
+                    // Support Android Interface
                     if (window.AndroidPOS && window.AndroidPOS.printStruk) {
                         window.AndroidPOS.printStruk(jsonString);
-                    } else {
-                        console.log("Mode Web: Simulasi Cetak Struk (Cek Console)");
+                        console.log("Struk dikirim ke Android");
+                    } 
+                    // Support WebView Standard
+                    else if (window.ReactNativeWebView) {
+                        window.ReactNativeWebView.postMessage(jsonString);
+                    }
+                    else {
+                        console.log("Mode Web: Struk tidak dicetak (Simulasi)");
                     }
                 } catch (e) {
-                    console.error("Gagal mengirim ke aplikasi:", e);
+                    console.error("Gagal print:", e);
                 }
-            },
-
-            // Fungsi Bicara (TTS)
-            say(text) {
-                this.message = text;
-                let u = new SpeechSynthesisUtterance(text);
-                u.lang = 'id-ID';
-                u.rate = 1.1; 
-                window.speechSynthesis.speak(u);
-            },
-
-            // Parser Angka (Satu, Dua, 10, dll)
-            parseNumber(text) {
-                const map = { 'satu': 1, 'dua': 2, 'tiga': 3, 'empat': 4, 'lima': 5, 'enam': 6, 'tujuh': 7, 'delapan': 8, 'sembilan': 9, 'sepuluh': 10 };
-                let match = text.match(/\d+/);
-                if (match) return parseInt(match[0]);
-                for (let k in map) { if (text.includes(k)) return map[k]; }
-                return 0;
-            },
-
-            // Parser Uang (Ribu, Juta, Ceban, Goceng)
-            parseMoney(text) {
-                let clean = text.replace(/\./g, '').replace(/rp/g, '').trim();
-                let multiplier = 1;
-                if (text.includes("ribu")) multiplier = 1000;
-                if (text.includes("juta")) multiplier = 1000000;
-                
-                let base = this.parseNumber(clean); 
-                if(base === 0) {
-                     let preMatch = text.match(/(\d+)\s*ribu/);
-                     if(preMatch) base = parseInt(preMatch[1]);
-                }
-                if (base > 0) return base * multiplier;
-                return 0; 
             }
         }
     }
