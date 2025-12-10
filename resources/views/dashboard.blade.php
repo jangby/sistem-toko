@@ -22,21 +22,21 @@
 
         <div class="px-6 space-y-6">
 
-            <div class="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-3xl p-6 text-white shadow-lg shadow-blue-500/30 relative overflow-hidden transform transition hover:scale-[1.02]">
+            <div class="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-3xl p-6 text-white shadow-lg shadow-emerald-500/30 relative overflow-hidden transform transition hover:scale-[1.02]">
                 <div class="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
                 
-                <p class="text-blue-100 text-sm font-medium mb-1 relative z-10">Omset Hari Ini</p>
+                <p class="text-emerald-100 text-sm font-medium mb-1 relative z-10">Saldo Kas (Uang di Laci)</p>
                 <div class="flex items-baseline gap-1 relative z-10">
                     <span class="text-sm font-semibold">Rp</span>
-                    <h2 class="text-4xl font-black tracking-tight">{{ number_format($omsetToday, 0, ',', '.') }}</h2>
+                    <h2 class="text-4xl font-black tracking-tight">{{ number_format($currentCashBalance, 0, ',', '.') }}</h2>
                 </div>
                 
                 <div class="mt-4 pt-4 border-t border-white/10 flex items-center justify-between relative z-10">
-                    <div class="text-xs text-blue-100">
-                        {{ \Carbon\Carbon::now()->format('d F Y') }}
+                    <div class="text-xs text-emerald-100">
+                        Omset Hari Ini: <span class="font-bold">Rp {{ number_format($omsetToday, 0, ',', '.') }}</span>
                     </div>
-                    <div class="text-xs font-bold bg-white/20 px-2 py-1 rounded">
-                        Live Update
+                    <div class="text-[10px] font-bold bg-white/20 px-2 py-1 rounded">
+                        Live
                     </div>
                 </div>
             </div>

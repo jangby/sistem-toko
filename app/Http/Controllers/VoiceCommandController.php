@@ -82,50 +82,81 @@ class VoiceCommandController extends Controller
     // =========================================================================
     private function sendReport($text)
     {
-        $dateInfo = $this->parseDateFromText($text);
-        $startDate = $dateInfo['start'];
-        $endDate = $dateInfo['end'];
-        $periodName = $dateInfo['label'];
+        try {
+            // 1. Parsing Tanggal
+            $dateInfo = $this->parseDateFromText($text);
+            $startDate = $dateInfo['start'];
+            $endDate = $dateInfo['end'];
+            $periodName = $dateInfo['label'];
 
-        // Cek filter produk
-        $productName = $this->extractProductName($text, ['kirim', 'laporan', 'penjualan', 'wa', 'ke', 'grup']);
-        
-        $query = TransactionDetail::with('product')
-            ->whereHas('transaction', function($q) use ($startDate, $endDate) {
-                $q->whereBetween('created_at', [$startDate, $endDate]);
-            });
+            // 2. Parsing Nama Produk (Jika ada)
+            // Kita sederhanakan logic extract agar tidak menghapus terlalu banyak kata
+            $cleanText = str_replace(['kirim', 'laporan', 'penjualan', 'wa', 'ke', 'grup', 'hari', 'ini', 'besok', 'kemarin'], '', $text);
+            $cleanText = preg_replace('/\d+/', '', $cleanText); // Hapus angka
+            $productName = trim($cleanText);
 
-        $title = "LAPORAN PENJUALAN";
-        if ($productName) {
-            $product = Product::where('name', 'like', "%{$productName}%")->first();
-            if ($product) {
-                $query->where('product_id', $product->id);
-                $title .= " " . strtoupper($product->name);
+            $query = TransactionDetail::with('product')
+                ->whereHas('transaction', function($q) use ($startDate, $endDate) {
+                    $q->whereBetween('created_at', [$startDate, $endDate]);
+                });
+
+            $title = "LAPORAN PENJUALAN";
+            $isSpecific = false;
+
+            // Jika ada sisa kata lebih dari 2 huruf, anggap itu nama barang
+            if (strlen($productName) > 2) {
+                $product = Product::where('name', 'like', "%{$productName}%")->first();
+                if ($product) {
+                    $query->where('product_id', $product->id);
+                    $title .= " " . strtoupper($product->name);
+                    $isSpecific = true;
+                }
             }
+
+            $details = $query->get();
+
+            // 3. Hitung Data
+            $omset = 0;
+            $qty = 0;
+            
+            foreach($details as $d) {
+                $omset += ($d->price * $d->qty);
+                $qty += $d->qty;
+            }
+
+            // Jika data kosong, tetap kirim notif "Data Kosong" agar user tahu sistem bekerja
+            if ($qty == 0) {
+                return response()->json(['status' => 'success', 'message' => "Tidak ada data penjualan untuk {$periodName}."]);
+            }
+
+            // 4. Susun Pesan (Format WA)
+            $msg = "📊 *{$title}* 📊\n";
+            $msg .= "📅 Periode: " . strtoupper($periodName) . "\n";
+            $msg .= "--------------------------\n";
+            $msg .= "📦 Terjual: {$qty} Pcs\n";
+            $msg .= "💰 Total: " . $this->bacaUang($omset) . "\n"; // Pakai bacaUang agar lebih natural dibaca
+            $msg .= "--------------------------\n";
+            
+            // Tambahkan rincian jika barang spesifik (biar lebih detail)
+            if ($isSpecific) {
+                $msg .= "Detail: Rp " . number_format($omset, 0, ',', '.') . "\n";
+            }
+
+            $msg .= "Dikirim via Voice Command 🎤";
+
+            // 5. Kirim via WA Service
+            $sent = WaService::sendGroupMessage($msg);
+
+            if ($sent) {
+                return response()->json(['status' => 'success', 'message' => "Laporan berhasil dikirim ke Grup WA."]);
+            } else {
+                return response()->json(['status' => 'error', 'message' => "Gagal kirim WA. Cek koneksi internet atau setting WAHA."]);
+            }
+
+        } catch (\Exception $e) {
+            Log::error("Voice Report Error: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => "Terjadi error sistem saat membuat laporan."]);
         }
-
-        $omset = 0;
-        $qty = 0;
-        $details = $query->get();
-
-        foreach($details as $d) {
-            $omset += ($d->price * $d->qty);
-            $qty += $d->qty;
-        }
-
-        // Susun Pesan WA
-        $msg = "📊 *{$title}* 📊\n";
-        $msg .= "📅 Periode: {$periodName}\n";
-        $msg .= "--------------------------\n";
-        $msg .= "📦 Terjual: {$qty} Pcs\n";
-        $msg .= "💰 Omset: " . $this->bacaUang($omset) . "\n";
-        $msg .= "--------------------------\n";
-        $msg .= "Dikirim via Perintah Suara 🎤";
-
-        // Kirim
-        WaService::sendGroupMessage($msg);
-
-        return response()->json(['status' => 'success', 'message' => "Laporan {$periodName} berhasil dikirim ke Grup WA."]);
     }
 
     // =========================================================================
